@@ -1,0 +1,4 @@
+1. Don't delete any picture or else flappybird might not work.
+2. Open the html file to play in browser.
+3. Better works on laptop/pc.
+4. Enjoy

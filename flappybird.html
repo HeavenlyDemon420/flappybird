@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Fullscreen Flappy Bird – Custom with Golden Pillars & Speed Increase</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100%;
+      background: #000;
+    }
+    /* The canvas fills the viewport */
+    canvas {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    /* Overlays for the start and game-over screens */
+    .overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: url('assets/background.jpg') no-repeat center center;
+      background-size: cover;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .hidden {
+      display: none;
+    }
+    .button-image {
+      border: none;
+      background: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- Fullscreen Canvas -->
+  <canvas id="game-canvas"></canvas>
+  
+  <!-- Start Screen Overlay -->
+  <div id="start-screen" class="overlay">
+    <button id="start-button" class="button-image">
+      <img src="assets/start_button.png" alt="Start" />
+    </button>
+  </div>
+  
+  <!-- Game Over Overlay -->
+  <div id="gameover-screen" class="overlay hidden">
+    <img src="assets/gameover.png" alt="Game Over" />
+    <br>
+    <button id="restart-button" class="button-image">
+      <img src="assets/restart_button.png" alt="Restart" />
+    </button>
+  </div>
+  
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      // --- Canvas Setup ---
+      const canvas = document.getElementById("game-canvas");
+      const ctx = canvas.getContext("2d");
+      let WIDTH, HEIGHT;
+      
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        WIDTH = canvas.width;
+        HEIGHT = canvas.height;
+      }
+      resizeCanvas();
+      window.addEventListener("resize", resizeCanvas);
+      
+      // --- Background Setup ---
+      const bgImg = new Image();
+      bgImg.src = "assets/background.jpg";
+      
+      function drawBackground() {
+        if (bgImg.complete) {
+          const imgRatio = bgImg.width / bgImg.height;
+          const canvasRatio = WIDTH / HEIGHT;
+          let drawWidth, drawHeight;
+          if (canvasRatio > imgRatio) {
+            drawWidth = WIDTH;
+            drawHeight = WIDTH / imgRatio;
+          } else {
+            drawHeight = HEIGHT;
+            drawWidth = HEIGHT * imgRatio;
+          }
+          const offsetX = (WIDTH - drawWidth) / 2;
+          const offsetY = (HEIGHT - drawHeight) / 2;
+          ctx.drawImage(bgImg, offsetX, offsetY, drawWidth, drawHeight);
+        } else {
+          ctx.fillStyle = "#000";
+          ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+      }
+      
+      // --- Game Constants & Variables ---
+      const GRAVITY = 0.25;
+      const JUMP_STRENGTH = -5;
+      let PILLAR_SPEED = 2;
+      const PILLAR_WIDTH = 70;
+      
+      const BIRD_WIDTH = 120;
+      const BIRD_HEIGHT = 90;
+      let bird = { x: WIDTH / 4, y: HEIGHT / 2, vy: 0, width: BIRD_WIDTH, height: BIRD_HEIGHT };
+      
+      // --- Bird Animation ---
+      const birdFrames = [new Image(), new Image(), new Image()];
+      birdFrames[0].src = "assets/bird1.png";
+      birdFrames[1].src = "assets/bird2.png";
+      birdFrames[2].src = "assets/bird3.png";
+      let birdFrameIndex = 0;
+      let birdFrameTimer = 0;
+      const BIRD_ANIMATION_SPEED = 10;
+      
+      // --- Pillars ---
+      let pillars = [];
+      let pillarsPassedCount = 0;
+      let score = 0;
+      let gameStarted = false;
+      let gameOver = false;
+      
+      function randomInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+      
+      function randomHorizontalGap() {
+        return randomInt(3 * BIRD_WIDTH, 5 * BIRD_WIDTH);
+      }
+      
+      function createPillar() {
+        const horizGap = randomHorizontalGap();
+        let x;
+        if (pillars.length === 0) {
+          x = WIDTH + horizGap;
+        } else {
+          x = pillars[pillars.length - 1].x + horizGap;
+        }
+        const minGapHeight = BIRD_HEIGHT * 2;
+        const maxGapHeight = BIRD_HEIGHT * 3;
+        const gapHeight = randomInt(minGapHeight, maxGapHeight);
+        const minGapY = 20;
+        const maxGapY = HEIGHT - gapHeight - 20;
+        const gapY = randomInt(minGapY, maxGapY);
+        const type = Math.random() < 0.05 ? "golden" : "normal";
+        pillars.push({ x: x, gapY: gapY, gapHeight: gapHeight, type: type });
+      }
+      
+      createPillar();
+      
+      function drawPillar(x, y, width, height, type) {
+        let fillColor, strokeColor;
+        if (type === "golden") {
+          fillColor = "gold";
+          strokeColor = "darkgoldenrod";
+        } else {
+          fillColor = "#f0f0f0";
+          strokeColor = "#cccccc";
+        }
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(x, y, width, height);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, width, height);
+        ctx.beginPath();
+        const segments = 6;
+        for (let i = 1; i < segments; i++) {
+          const lineX = x + i * (width / segments);
+          ctx.moveTo(lineX, y);
+          ctx.lineTo(lineX, y + height);
+        }
+        ctx.stroke();
+      }
+      
+      function update() {
+        if (gameOver) return;
+        
+        bird.vy += GRAVITY;
+        bird.y += bird.vy;
+        
+        pillars.forEach(p => { p.x -= PILLAR_SPEED; });
+        
+        while (pillars.length && (pillars[0].x + PILLAR_WIDTH) < 0) {
+          const passedPillar = pillars.shift();
+          pillarsPassedCount++;
+          if (passedPillar.type === "golden") {
+            score += 6;
+          } else {
+            score += 1;
+          }
+          if (pillarsPassedCount % 20 === 0) {
+            PILLAR_SPEED *= 1.2;
+          }
+        }
+        
+        if (pillars.length === 0 || pillars[pillars.length - 1].x < WIDTH) {
+          createPillar();
+        }
+        
+        if (bird.y + bird.height / 2 > HEIGHT || bird.y - bird.height / 2 < 0) {
+          gameOver = true;
+          showGameOver();
+        }
+        
+        for (let p of pillars) {
+          if (bird.x + bird.width / 2 > p.x && bird.x - bird.width / 2 < p.x + PILLAR_WIDTH) {
+            if (bird.y - bird.height / 2 < p.gapY || bird.y + bird.height / 2 > p.gapY + p.gapHeight) {
+              gameOver = true;
+              showGameOver();
+            }
+          }
+        }
+      }
+      
+      function draw() {
+        drawBackground();
+        pillars.forEach(p => {
+          drawPillar(p.x, 0, PILLAR_WIDTH, p.gapY, p.type);
+          drawPillar(p.x, p.gapY + p.gapHeight, PILLAR_WIDTH, HEIGHT - (p.gapY + p.gapHeight), p.type);
+        });
+        
+        birdFrameTimer++;
+        if (birdFrameTimer >= BIRD_ANIMATION_SPEED) {
+          birdFrameTimer = 0;
+          birdFrameIndex = (birdFrameIndex + 1) % birdFrames.length;
+        }
+        let currentBirdImg = birdFrames[birdFrameIndex];
+        if (currentBirdImg.complete) {
+          ctx.drawImage(currentBirdImg, bird.x - bird.width / 2, bird.y - bird.height / 2, bird.width, bird.height);
+        } else {
+          ctx.fillStyle = "#FFFF00";
+          ctx.beginPath();
+          ctx.arc(bird.x, bird.y, bird.width / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        ctx.fillStyle = "white";
+        ctx.font = "20px Arial";
+        ctx.fillText("Score: " + score, 10, 30);
+      }
+      
+      function gameLoop() {
+        if (gameStarted && !gameOver) {
+          update();
+        }
+        draw();
+        requestAnimationFrame(gameLoop);
+      }
+      gameLoop();
+      
+      canvas.addEventListener("click", function() {
+        if (!gameStarted || gameOver) return;
+        bird.vy = JUMP_STRENGTH;
+      });
+      document.addEventListener("keydown", function(e) {
+        if (e.code === "Space") {
+          if (!gameStarted || gameOver) return;
+          bird.vy = JUMP_STRENGTH;
+        }
+      });
+      
+      function restartGame() {
+        bird.x = WIDTH / 4;
+        bird.y = HEIGHT / 2;
+        bird.vy = 0;
+        pillars = [];
+        pillarsPassedCount = 0;
+        PILLAR_SPEED = 2;
+        createPillar();
+        score = 0;
+        gameOver = false;
+        hideGameOver();
+      }
+      
+      function showGameOver() {
+        document.getElementById("gameover-screen").classList.remove("hidden");
+      }
+      
+      function hideGameOver() {
+        document.getElementById("gameover-screen").classList.add("hidden");
+      }
+      
+      document.getElementById("start-button").addEventListener("click", function() {
+        gameStarted = true;
+        document.getElementById("start-screen").classList.add("hidden");
+      });
+      
+      document.getElementById("restart-button").addEventListener("click", function() {
+        restartGame();
+      });
+    });
+  </script>
+</body>
+</html>
